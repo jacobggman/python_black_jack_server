@@ -20,8 +20,19 @@ class Client:
 class InvalidProtocol(Exception):
     pass
 
+# TODO: make a lib for socket server in python
 
 # TODO: add on await failed (disconnected)
+# TODO: delete unuse messages
+# TODO: improve message read (first read code and len)
+# TODO: do on code and on socket code
+# TODO: make the protocol make automatic
+# TODO: config the server how I like (return format error, auto correct and so on)
+# TODO: make tls
+# TODO: add typing to the function that the user use
+
+
+
 
 class ThreadedServer(object):
     def __init__(self, host, port):
