@@ -22,12 +22,12 @@ class InvalidProtocol(Exception):
 
 # TODO: make a lib for socket server in python
 
+# TODO: config the server how I like (return format error, auto correct and so on, encryption or not)
 # TODO: add on await failed (disconnected)
 # TODO: delete unuse messages
+# TODO: do on code and on code socket function callbakcs
 # TODO: improve message read (first read code and len)
-# TODO: do on code and on socket code
-# TODO: make the protocol make automatic
-# TODO: config the server how I like (return format error, auto correct and so on)
+# TODO: make the protocol docs automatic
 # TODO: make tls
 # TODO: add typing to the function that the user use
 
