@@ -1,5 +1,5 @@
 import socket
-from protocol import Message, Codes
+from chat_example import Message, Codes
 
 s = socket.socket()
 s.connect(('127.0.0.1',1337))

@@ -1,5 +1,5 @@
 import socket
-from protocol import Message, Codes
+from chat_example import Message, Codes
 import threading
 import json
 
