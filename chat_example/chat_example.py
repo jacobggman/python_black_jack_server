@@ -1,7 +1,6 @@
-from main import ThreadedServer
-from protocol import Codes, Message
-import json
-
+from . import messages
+from .codes import Codes
+from jsock import Code, ThreadedServer, Message, Config, Protocol
 
 class ChatServer:
     def __init__(self, server: ThreadedServer, name):
@@ -52,8 +51,11 @@ class ChatServer:
         message = Message(Codes.GET_CHAT, json.dumps(message_dict))
         self.echo(message, client)
 
+
 if __name__ == "__main__":
-    server = ThreadedServer('', 8200)
+    protocol = Protocol(messages)
+    config = Config(Codes)
+    server = ThreadedServer(config, protocol)
     chat_server = ChatServer(server, "Jacob")
     chat_server.start()
     while True:

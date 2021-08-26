@@ -1,59 +1,76 @@
 import socket
 import threading
-from protocol import Codes, Message
 from collections import deque
-from limited_size_dict import LimitedSizeDict
 from concurrent.futures import ThreadPoolExecutor
+from jsock.protocol import Protocol
+from jsock.message import MessageHeader, Message
+from jsock.errors import Errors
+from jsock.client import Client
+from jsock.config import Config
 
 PORT = 1337
 LISTEN_NUM = 50
-AWAIT_LIMIT_NUM = 100
-AWAIT_PER_CODE_LIMIT_NUM = 100
+AWAIT_LIMIT_NUM = 1000
 
+# JacobSocks
+#
+# Features:
+# Multithreading
+# Simple
+# Customisable
+# Auto documentation your API
+# Error handling
+# Get message by callbacks and by (self made) await (await per socket)
+# Expandable
 
-class Client:
-    def __init__(self, sock, address):
-        self.sock = sock
-        self.address = address
+# How to use:
+# Show code
 
 
 class InvalidProtocol(Exception):
     pass
 
+
 # TODO: make a lib for socket server in python
 
+# TODO: Threw a exception
+# TODO: make the config
+# TODO: Make the chat server
+# TODO: Upload to git and readme
+# TODO: Finish the server
+# TODO: + add on await failed (disconnected)
+# TODO: + delete unuse messages
+# TODO: do on code and on code socket function callbakcs (no necessary)
+# TODO: + improve message read (first read code and len)
+# TODO: make the chat_example docs automatic
+# TODO: DEBUG
+
 # TODO: config the server how I like (return format error, auto correct and so on, encryption or not)
-# TODO: add on await failed (disconnected)
-# TODO: delete unuse messages
-# TODO: do on code and on code socket function callbakcs
-# TODO: improve message read (first read code and len)
-# TODO: make the protocol docs automatic
+# (make the class first)
 # TODO: make tls
-# TODO: add typing to the function that the user use
-
-
 
 
 class ThreadedServer(object):
-    def __init__(self, host, port):
-        self._host = host
-        self._port = port
+    def __init__(self, config: Config, protocol: Protocol):
+        self._config = config
+        self._protocol = protocol
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._sock.bind((self._host, self._port))
+        self._sock.bind((self._config.host, self._config.port))
 
         self._input_lock = threading.Lock()
         self._input_cv = threading.Condition(self._input_lock)
         self._input_queue = deque()
         self._input_callback = dict()
 
-        self._input_awaits = LimitedSizeDict(size_limit=AWAIT_LIMIT_NUM)
+        self._input_awaits = dict()
         self._await_lock = threading.Lock()
         self._await_cv = threading.Condition(self._await_lock)
 
         self._on_disconnect_dict = dict()
         self._on_connect = None
 
+        self._await_socks = dict()
         # self.output_lock = threading.Lock()
         # self.output_cv = threading.Condition(self.output_lock)
         # self.output_queue = deque()
@@ -98,15 +115,29 @@ class ThreadedServer(object):
         func = lambda: self._send(client.sock, message)
         self._output_executor.submit(func)
 
-    def await_for_response(self, client, code):
+    # TODO: remove size limit and add dict of requests and not save every message
+    # TODO: timeout
+    def await_for_response(self, client, code, timeout=None, config=None):
         with self._await_cv:
-            while (client, code) not in self._input_awaits:
-                self._await_cv.wait()
-            n = self._input_awaits[(client, code)]
-            del self._input_awaits[(client, code)]
-            return n
+            self._input_awaits[(client, code)] = None
+            if client not in self._await_socks:
+                self._await_socks[client] = []
+            self._await_socks[client].apppend(code)
 
-    # code, message
+            while self._input_awaits[(client, code)] is None:
+                self._await_cv.wait()
+
+            return_value = self._input_awaits[(client, code)]
+            del self._input_awaits[(client, code)]
+
+            self._await_socks[client].remove(code)
+
+            if len(self._await_socks[client]) == 0:
+                del self._await_socks[client]
+
+            return return_value
+
+    # sorter
     def _get_message_listener(self):
         while True:
             with self._input_cv:
@@ -122,30 +153,32 @@ class ThreadedServer(object):
                         self._callbacks_executor.submit(lambda: func(client, message))
                     else:
                         with self._await_cv:
-                            self._input_awaits[(client, message.code)] = message
-                            self._await_cv.notify_all()
+                            if (client, message.code) in self._input_awaits:
+                                self._input_awaits[(client, message.code)] = message
+                                self._await_cv.notify_all()
 
     def _add_to_queue(self, client, message):
         with self._input_cv:
             self._input_queue.append((client, message))
             self._input_cv.notify_all()
 
+    # TODO: don't listen to non use code
     def _on_listen_to_client(self, client):
-        # TODO: fix the read of the size
-
-        size = 1024
         while True:
             try:
-                data = client.sock.recv(size)
-                msg = Message.format(data)
-                if msg.code == Codes.LOCAL_FORMAT_ERROR:
+                header_data = client.sock.recv(MessageHeader.get_size())
+
+                header = MessageHeader.format(header_data, self._config.code_enum_type)
+                if header.code == Errors.LOCAL_FORMAT_ERROR:
                     raise InvalidProtocol('Client disconnected')
 
-                self._add_to_queue(client, msg)
-                # msg.code = Codes.PONG
-                # client.send(msg.to_bytes())
+                data = client.sock.recv(header.get_size())
+                class_type = self._protocol.get_class(header)
+                if class_type is not None:
+                    message = Message.format(header, class_type.from_json(data.decode()))
+                    self._add_to_queue(client, message)
 
-            except InvalidProtocol as e: # TODO: to not kick
+            except InvalidProtocol as e:  # TODO: to not kick
                 print(e)
                 client.sock.close()
                 func = self._on_disconnect_dict.get(client)
@@ -160,14 +193,16 @@ class ThreadedServer(object):
                     self._callbacks_executor.submit(lambda: func(client))
                 return False
 
+    def _on_disconnect(self, client):
+        with self._await_cv:
+            if client in self._await_socks:
+                for code in self._await_socks[client]:
+                    self._input_awaits[(client, code)] = Message.error()
+                del self._await_socks[client]
+                self._await_cv.notify_all()
 
-if __name__ == "__main__":
-    server = ThreadedServer('', PORT)
-    server.set_on_connector(lambda x: print("hi!!"))
-    server.start()
-    while True:
-        input()
-
-
-
+        client.sock.close()
+        func = self._on_disconnect_dict.get(client)
+        if func is not None:
+            self._callbacks_executor.submit(lambda: func(client))
 
