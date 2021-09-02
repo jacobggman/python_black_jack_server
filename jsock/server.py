@@ -42,6 +42,8 @@ class InvalidProtocol(Exception):
 # TODO: + delete unuse messages
 # TODO: do on code and on code socket function callbakcs (no necessary)
 # TODO: + improve message read (first read code and len)
+# TODO: += for adding function
+# TODO: -= for removing function
 # TODO: make the chat_example docs automatic
 # TODO: DEBUG
 
